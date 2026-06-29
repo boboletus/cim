@@ -1,5 +1,5 @@
 @use "sass:color";
-@import "variables";
+@use "variables" as *;
 
 body {
     margin: 0;
@@ -179,6 +179,21 @@ div.chord-notes-container > div.note-wrapper {
 
 div.use-letters div.note-wrapper div.note-text {
     display: flex;
+}
+
+div.flag-container.use-sheet-music div.chord-notes-container {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+div.use-sheet-music div.note-wrapper div.note-text {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
 }
 
 
@@ -444,14 +459,14 @@ div.flag-wrapper {
     max-height: 30vh; // Fallback
     max-height: 30dvh;
 
+    display: none;
+    opacity: 0;
+
     @media only screen and (max-width: 768px) {
         margin-left: 0.25em;
         margin-right: 0.25em;
         width: calc(50% - 0.51em);
     }
-
-    display: none;
-    opacity: 0;
 }
 
 div.flag-wrapper.visible {
@@ -570,10 +585,6 @@ body.colorscheme-light div.flag {
   transform: translateX(-50%);
   width: 75vw; // Fallback
   width: 75dvw;
-  @media only screen and (max-width: 400) {
-      width: 95vw; // Fallback
-      width: 95dvw;
-  }
   max-height: 90vh;
   max-height: 90dvh;
   padding: 10px;
@@ -585,6 +596,11 @@ body.colorscheme-light div.flag {
   opacity: 0;
   transition: visibility 0s, opacity 0.3s;
   z-index: 100;
+
+  @media only screen and (max-width: 400) {
+      width: 95vw; // Fallback
+      width: 95dvw;
+  }
 }
 
 div.infobox#trainer-infobox {

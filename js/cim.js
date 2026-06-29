@@ -1,3 +1,7 @@
+/* ==========================================================================
+   Service Worker Registration
+   ========================================================================== */
+
 let TONE_SAMPLERS = {};
 
 if ("serviceWorker" in navigator) {
@@ -11,6 +15,11 @@ if ("serviceWorker" in navigator) {
     );
 
 }
+
+/* ==========================================================================
+   Tone.js Audio Initialization
+   Lazy-loads and caches sampler instances for each instrument.
+   ========================================================================== */
 
 function start_tone() {
     if (!_TONE_STARTED) {
@@ -42,6 +51,10 @@ function get_sampler(instrument) {
 function get_current_sampler() {
     return get_sampler(STATE.current_instrument);
 }
+
+/* ==========================================================================
+   Date/Time Utilities
+   ========================================================================== */
 
 function get_current_timestamp() {
     return Date.now() / 1000;
@@ -77,6 +90,11 @@ function is_recent(timestamp) {
     return (get_current_timestamp() - timestamp) <= SESSION_TIMEOUT_TIME_SECONDS;
 }
 
+/* ==========================================================================
+   Stats Object Factories
+   Creates tally and session-stats data structures with confusion matrices.
+   ========================================================================== */
+
 function new_tally() {
     return {
         correct: 0,
@@ -97,6 +115,11 @@ function new_stats() {
         done: false,
     }
 }
+
+/* ==========================================================================
+   Application State & Constants
+   All module-level mutable state, defaults, and configuration keys.
+   ========================================================================== */
 
 let _COLORS = null;
 let _CHORDS_ON = false;
@@ -154,6 +177,11 @@ const _GUEST_USER_ID = 100;
 const SESSION_TIMEOUT_TIME_SECONDS = 60 * 30;
 
 let STATE = null;
+
+/* ==========================================================================
+   Chord Colors & Flag Rendering
+   Maps between color names and chord data, builds audio elements, shows/hides flags.
+   ========================================================================== */
 
 function get_color_index(color) {
     return Object.keys(CHORDS_TONE).findIndex((x) => x === color);
@@ -263,6 +291,11 @@ function audio_file_elem(audio_file) {
     return audio_file.elem;
 }
 
+/* ==========================================================================
+   Math & Random Utilities
+   Weighted random selection, normal distribution, cumulative sums.
+   ========================================================================== */
+
 function normal_random(mean=0, stdev=1) {
     const u = 1 - Math.random(); // Converting [0,1) to (0,1]
     const v = Math.random();
@@ -309,6 +342,10 @@ function random_duration(mean=2, stdev=0.3, min=1.0, max=2.5) {
     return clip(normal_random(mean, stdev), min, max);
 }
 
+/* ==========================================================================
+   Chord Identification Flow
+   Core guessing loop: selection, stats update, emoji feedback, next-chord state.
+   ========================================================================== */
 
 function select_new_color() {
     weights = get_current_coefficients();
@@ -554,6 +591,11 @@ function select_flag(elem) {
     }
 }
 
+/* ==========================================================================
+   Single Note Trainer
+   Note-level quiz: guess a note within a chord, stats per-note-per-chord.
+   ========================================================================== */
+
 function select_single_note(elem) {
     if (_SELECTED_NOTE_ELEM !== null) {
         return; // A note has already been selected
@@ -623,7 +665,11 @@ function set_note_played_after(delay) {
     );
 }
 
-// Standard Normal variate using Box-Muller transform.
+/* ==========================================================================
+   Audio Playback Engine
+   Tone.js synthesis (primary) and MP3 <audio> fallback (legacy instruments).
+   ========================================================================== */
+
 function play_chord_tone(chord_or_notes, duration) {
     let chord;
     if (CHORDS_TONE.hasOwnProperty(chord_or_notes)) {
@@ -677,6 +723,11 @@ function play_chord(color, duration=null) {
         play_chord_tone(color, duration);
     }
 }
+
+/* ==========================================================================
+   Chord Session Lifecycle
+   Next chord, audio preloading, instrument/level switching, session reset.
+   ========================================================================== */
 
 function next_audio() {
     let next_button = document.getElementById("next-chord");
@@ -892,6 +943,11 @@ function reset_stats(done = true) {
     populate_audio();
 }
 
+/* ==========================================================================
+   Session History & Persistence
+   Per-profile, per-chord session arrays saved to localStorage.
+   ========================================================================== */
+
 function get_session_history() {
     let history = _SESSION_HISTORY;
     if (history === null) {
@@ -974,6 +1030,11 @@ function save_session_history() {
 function save_state() {
     localStorage.setObject(STATE_KEY, STATE);
 }
+
+/* ==========================================================================
+   Profile Management
+   CRUD operations: create, edit, delete profiles and their settings.
+   ========================================================================== */
 
 function initialize_profile_defaults(profile) {
     function initialize(val, default_value) {
@@ -1484,7 +1545,11 @@ function submit_profile_changes() {
 
     if (profile_values.id === get_current_profile().id) {
         // Do this to update the icon
-        set_current_profile(get_current_profile());
+        try {
+            set_current_profile(get_current_profile());
+        } catch (e) {
+            console.error("Error setting profile:", e);
+        }
     }
     close_profile_adder();
 }
@@ -1505,6 +1570,11 @@ function delete_profile() {
     populate_profile_pulldown();
     close_profile_adder();
 }
+
+/* ==========================================================================
+   Profile UI & Chord Display Modes
+   Updates profile icon/name, toggles between shapes/letters/sheet-music display.
+   ========================================================================== */
 
 function populate_profile_ui_elements() {
     const profile = get_current_profile();
@@ -1528,6 +1598,9 @@ function set_chord_display_mode(chord_mode) {
         use_letters = false;
     } else if (chord_mode == "letters_only") {
         use_shapes = false;
+    } else if (chord_mode == "sheet_music") {
+        use_shapes = false;
+        use_letters = false;
     }
 
     const note_holders = [
@@ -1548,9 +1621,153 @@ function set_chord_display_mode(chord_mode) {
         } else {
             holder_elem.classList.remove("use-letters");
         }
+
+        if (chord_mode === "sheet_music") {
+            holder_elem.classList.add("use-sheet-music");
+        } else {
+            holder_elem.classList.remove("use-sheet-music");
+        }
+    }
+
+    if (chord_mode === "sheet_music") {
+        render_sheet_music_notation();
+    } else {
+        restore_original_note_content();
     }
 }
 
+/* ==========================================================================
+   Sheet Music Rendering (VexFlow)
+   Renders standard musical notation staves via the VexFlow library.
+   ========================================================================== */
+
+// Convert app note format (e.g. "C#4", "Bb3") to VexFlow key format (e.g. "c#/4", "bb/3")
+function to_vexflow_key(noteStr) {
+    const match = noteStr.match(/^([A-G])([#b]?)(\d)$/);
+    if (!match) return "c/4";
+    const [, letter, accidental, octave] = match;
+    return letter.toLowerCase() + accidental + "/" + octave;
+}
+
+// Get the accidental string from an app note (e.g. "C#4" -> "#", "Bb3" -> "b", "C4" -> null)
+function get_accidental(noteStr) {
+    const match = noteStr.match(/^[A-G]([#b])\d$/);
+    return match ? match[1] : null;
+}
+
+// Track which DOM containers currently hold VexFlow SVGs, to avoid
+// creating redundant Renderer instances and to ensure proper cleanup.
+const _vexflow_containers = new WeakSet();
+
+function render_vexflow_staff(container, notes) {
+    // Caller must clear container and manage originalHtml before calling this.
+    const { Renderer, Stave, StaveNote, Voice, Formatter, Accidental } = VexFlow;
+
+    _vexflow_containers.delete(container);
+
+    // Render at a fixed internal size; the SVG is scaled to fit the container afterward.
+    const width = 200;
+    const height = 120;
+
+    const renderer = new Renderer(container, Renderer.Backends.SVG);
+    renderer.resize(width, height);
+    const context = renderer.getContext();
+
+    const staveWidth = width - 20;
+    const staveX = 10;
+    const staveY = 10;
+
+    const stave = new Stave(staveX, staveY, staveWidth);
+    stave.setContext(context).draw();
+
+    const keys = notes.map(to_vexflow_key);
+    const accidentals = notes.map(get_accidental);
+
+    const staveNote = new StaveNote({ keys: keys, duration: "w" });
+
+    for (let i = 0; i < accidentals.length; i++) {
+        if (accidentals[i]) {
+            staveNote.addModifier(new Accidental(accidentals[i]), i);
+        }
+    }
+
+    const voice = new Voice({ numBeats: 4, beatValue: 4 });
+    voice.setStrict(false);
+    voice.addTickables([staveNote]);
+
+    new Formatter().joinVoices([voice]).format([voice], staveWidth - 40);
+    voice.draw(context, stave);
+
+    // Make the SVG scale to fit the container
+    const svgElem = container.querySelector('svg');
+    if (svgElem) {
+        svgElem.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        svgElem.setAttribute('width', '100%');
+        svgElem.setAttribute('height', '100%');
+        svgElem.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    }
+
+    _vexflow_containers.add(container);
+}
+
+// Safely replace a container's content with a VexFlow staff.
+// Stores the original innerHTML so it can be restored later.
+function _try_render_vexflow(container, notes) {
+    // Only store the original HTML the first time for this container.
+    if (!container.dataset.originalHtml) {
+        container.dataset.originalHtml = container.innerHTML;
+    }
+    const original = container.dataset.originalHtml;
+    container.innerHTML = "";
+    try {
+        render_vexflow_staff(container, notes);
+    } catch (e) {
+        console.error("VexFlow rendering error:", e, "notes:", notes);
+        // Restore original content so the container isn't left empty
+        container.innerHTML = original;
+        _vexflow_containers.delete(container);
+    }
+}
+
+function render_sheet_music_notation() {
+    if (typeof VexFlow === 'undefined') {
+        console.error("VexFlow not loaded");
+        return;
+    }
+    const chordContainers = document.querySelectorAll('.chord-notes-container');
+    for (const container of chordContainers) {
+        const flagWrapper = container.closest('.flag-wrapper');
+        const color = flagWrapper?.dataset?.color;
+        if (!color || !CHORDS_TONE[color]) continue;
+        _try_render_vexflow(container, CHORDS_TONE[color]);
+    }
+
+    const noteTexts = document.querySelectorAll('#single-note-selector-container .note-text');
+    for (const noteText of noteTexts) {
+        const noteTarget = noteText.closest('.note-target');
+        const note = noteTarget?.dataset?.note;
+        if (!note) continue;
+        _try_render_vexflow(noteText, [note]);
+    }
+}
+
+function restore_original_note_content() {
+    document.querySelectorAll('.chord-notes-container[data-original-html]').forEach(el => {
+        el.innerHTML = el.dataset.originalHtml;
+        _vexflow_containers.delete(el);
+        delete el.dataset.originalHtml;
+    });
+    document.querySelectorAll('.note-text[data-original-html]').forEach(el => {
+        el.innerHTML = el.dataset.originalHtml;
+        _vexflow_containers.delete(el);
+        delete el.dataset.originalHtml;
+    });
+}
+
+/* ==========================================================================
+   Profile Lifecycle
+   Switching active profiles, updating UI, triggering audio/display changes.
+   ========================================================================== */
 
 function set_current_profile_by_id(profile_id) {
     let profile = STATE["profiles"][profile_id];
@@ -1628,6 +1845,11 @@ function toggle_profile_settings_visibility(populate=true) {
     }
 }
 
+/* ==========================================================================
+   Theme & Developer Utilities
+   Light/dark toggle, easter-egg unlock, state download.
+   ========================================================================== */
+
 function toggle_theme_mode() {
     document.body.classList.toggle("colorscheme-dark");
     document.body.classList.toggle("colorscheme-light");
@@ -1701,6 +1923,11 @@ function download_state() {
     download_elem.click();
     download_elem.remove();
 }
+
+/* ==========================================================================
+   Adaptive Learning Coefficients
+   Computes weighted selection probabilities based on session history.
+   ========================================================================== */
 
 const WEEK_SECONDS = 7 * 24 * 3600;
 
@@ -1826,6 +2053,11 @@ function calculate_coefficients(matrix, wrong_weight = 5.0, mistaken_for_weight 
     return coefficients;
 }
 
+/* ==========================================================================
+   Session History Cleanup
+   Removes empty sessions, fixes chord mismatches, dedupes entries.
+   ========================================================================== */
+
 function clean_session_history() {
     console.log("Cleaning session history");
     let full_history = get_session_history();
@@ -1866,6 +2098,11 @@ function clean_session_history() {
 
     save_session_history();
 }
+
+/* ==========================================================================
+   DOM Initialization
+   Entry point: loads state, populates UI, registers global event listeners.
+   ========================================================================== */
 
 document.addEventListener("DOMContentLoaded", function() {
     load_state();
